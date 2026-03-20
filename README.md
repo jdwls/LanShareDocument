@@ -201,6 +201,16 @@ LanShareDocument/
 
 如有问题或建议，请联系系统管理员。
 
+## GitHub 仓库
+
+本项目源代码托管在 GitHub 上：
+- 仓库地址：https://github.com/jdwls/LanShareDocument
+
+## 问题反馈
+
+如果在使用过程中遇到任何问题，请到 GitHub issue 中反馈：
+- 问题反馈：https://github.com/jdwls/LanShareDocument/issues
+
 ---
 **版本**: 1.0.0  
 **最后更新**: 2026年  
