@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>协作编辑器 - {{ class_name }}-{{ group_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.2.12/marked.min.js"></script>
+</head>
+<body>
+    <div class="editor-container">
+        <!-- 顶部导航栏 -->
+        <nav class="editor-navbar">
+            <div class="navbar-left">
+                <h1><i class="fas fa-users"></i> 小组协作编辑器</h1>
+                <div class="group-info">
+                    <span class="badge badge-class">{{ class_name }}</span>
+                    <span class="badge badge-group">{{ group_name }}</span>
+                    <span class="badge badge-user"><i class="fas fa-user"></i> {{ student_name }}</span>
+                </div>
+            </div>
+            <div class="navbar-right">
+                <div class="online-status">
+                    <i class="fas fa-wifi"></i>
+                    <span id="onlineCount">1</span>人在线
+                </div>
+                <a href="{{ url_for('student_logout') }}" class="btn btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> 退出登录
+                </a>
+            </div>
+        </nav>
+
+        <div class="editor-content">
+            <!-- 左侧编辑器区域 -->
+            <div class="editor-panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-edit"></i> Markdown编辑器</h3>
+                    <div class="panel-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="clearEditor()">
+                            <i class="fas fa-eraser"></i> 清空
+                        </button>
+                        <button class="btn btn-sm btn-info" onclick="toggleFullscreen()">
+                            <i class="fas fa-expand"></i> 全屏
+                        </button>
+                        {% if is_leader %}
+                        <button class="btn btn-sm btn-ai" onclick="openAIAssistant()">
+                            <i class="fas fa-robot"></i> AI助手（组长）
+                        </button>
+                        {% else %}
+                        <button class="btn btn-sm btn-ai" onclick="showLeaderOnlyMessage()" style="opacity: 0.6; cursor: not-allowed;" title="只有组长可以使用AI功能">
+                            <i class="fas fa-robot"></i> AI助手（仅组长）
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="editor-wrapper" id="editorContainer">
+                    <textarea id="markdownEditor">{{ document_content }}</textarea>
+                </div>
+                <div class="editor-footer">
+                    <div class="status-indicator">
+                        <span id="syncStatus" class="sync-status">
+                            <i class="fas fa-check-circle"></i> 已同步
+                        </span>
+                        <span id="lastUpdate" class="text-muted">最后更新: --:--:--</span>
+                    </div>
+                    <div class="editor-help">
+                        <i class="fas fa-question-circle"></i> Markdown快捷键: 
+                        <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>B</kbd> 加粗</span>
+                        <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>I</kbd> 斜体</span>
+                        <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>K</kbd> 链接</span>
+                        <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 垂直分隔条 -->
+            <div class="vertical-resizer" id="verticalResizer">
+                <div class="resizer-handle">
+                    <i class="fas fa-grip-lines-vertical"></i>
+                </div>
+            </div>
+
+            <!-- 右侧预览区域 -->
+            <div class="preview-panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-eye"></i> 实时预览</h3>
+                    <div class="panel-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="refreshPreview()">
+                            <i class="fas fa-sync-alt"></i> 刷新
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="exportMarkdown()">
+                            <i class="fas fa-download"></i> 导出
+                        </button>
+                    </div>
+                </div>
+                <div class="preview-wrapper">
+                    <div id="markdownPreview" class="markdown-preview"></div>
+                </div>
+                <div class="preview-footer">
+                    <div class="preview-info">
+                        <i class="fas fa-info-circle"></i> 预览内容实时更新
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧边栏（在线成员） -->
+            <div class="sidebar-panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-user-friends"></i> 在线成员</h3>
+                    <div class="panel-actions">
+                        <button class="btn btn-sm btn-refresh" onclick="refreshOnlineList()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="sidebar-content">
+                    <div class="members-list" id="membersList">
+                        <div class="member-item current-user">
+                            <div class="member-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="member-info">
+                                <strong>{{ student_name }}</strong>
+                                <span class="member-status online">在线 (您)</span>
+                            </div>
+                        </div>
+                        <!-- 其他成员将通过Socket.IO动态添加 -->
+                    </div>
+                    
+                    <div class="activity-log">
+                        <h4><i class="fas fa-history"></i> 活动记录</h4>
+                        <div class="activity-list" id="activityList">
+                            <div class="activity-item">
+                                <i class="fas fa-user-plus"></i>
+                                <span>{{ student_name }} 加入了协作</span>
+                                <small class="text-muted">刚刚</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sidebar-help">
+                        <h4><i class="fas fa-lightbulb"></i> 协作提示</h4>
+                        <ul>
+                            <li>所有编辑内容实时同步给同组成员</li>
+                            <li>离开页面将自动退出协作</li>
+                            <li>支持Markdown语法，所见即所得</li>
+                            <li>教师可以重置文档内容</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let socket = null;
+        let editor = null;
+        let isSyncing = false;
+        let lastContent = '';
+        let debounceTimer = null;
+        
+        // 初始化编辑器
+        function initEditor() {
+            // 检查是否已经初始化过
+            const existingEditor = document.querySelector('.CodeMirror');
+            if (existingEditor) {
+                existingEditor.remove();
+            }
+            
+            editor = CodeMirror.fromTextArea(document.getElementById('markdownEditor'), {
+                mode: 'markdown',
+                theme: 'monokai',
+                lineNumbers: true,
+                lineWrapping: true,
+                autofocus: true,
+                // 最简单的配置，避免滚动条问题
+                extraKeys: {
+                    "Ctrl-B": function(cm) { wrapSelection(cm, "**", "**"); },
+                    "Cmd-B": function(cm) { wrapSelection(cm, "**", "**"); },
+                    "Ctrl-I": function(cm) { wrapSelection(cm, "*", "*"); },
+                    "Cmd-I": function(cm) { wrapSelection(cm, "*", "*"); },
+                    "Ctrl-K": function(cm) { 
+                        const selection = cm.getSelection();
+                        if (selection) {
+                            cm.replaceSelection(`[${selection}](url)`);
+                        } else {
+                            cm.replaceSelection(`[链接文字](url)`);
+                        }
+                    },
+                    "Cmd-K": function(cm) { 
+                        const selection = cm.getSelection();
+                        if (selection) {
+                            cm.replaceSelection(`[${selection}](url)`);
+                        } else {
+                            cm.replaceSelection(`[链接文字](url)`);
+                        }
+                    },
+                    "Ctrl-S": function() { saveContent(); },
+                    "Cmd-S": function() { saveContent(); }
+                }
+            });
+            
+            // 设置编辑器高度
+            const editorContainer = document.getElementById('editorContainer');
+            const cmWrapper = editor.getWrapperElement();
+            
+            // 设置CodeMirror包装器高度
+            cmWrapper.style.height = '100%';
+            
+            // 清理重复的CSS类
+            setTimeout(() => {
+                // 移除重复的CSS类
+                const classes = cmWrapper.className.split(' ');
+                const uniqueClasses = [...new Set(classes)];
+                cmWrapper.className = uniqueClasses.join(' ');
+                
+                // 确保CodeMirror-line元素正常
+                const cmLines = cmWrapper.querySelectorAll('.CodeMirror-line');
+                cmLines.forEach(line => {
+                    line.style.minHeight = 'auto';
+                });
+            }, 50);
+            
+            // 设置初始内容
+            lastContent = editor.getValue();
+            updatePreview();
+            
+            // 监听编辑器变化
+            editor.on('change', function() {
+                if (!isSyncing) {
+                    // 立即更新预览
+                    updatePreview();
+                    
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(sendContentUpdate, 500);
+                    
+                    // 更新同步状态
+                    document.getElementById('syncStatus').innerHTML = 
+                        '<i class="fas fa-sync-alt fa-spin"></i> 同步中...';
+                    document.getElementById('syncStatus').className = 'sync-status syncing';
+                }
+            });
+        }
+        
+        // 发送内容更新
+        function sendContentUpdate() {
+            const content = editor.getValue();
+            if (content !== lastContent) {
+                socket.emit('edit', {
+                    student_name: '{{ student_name }}',
+                    class_name: '{{ class_name }}',
+                    group_name: '{{ group_name }}',
+                    content: content
+                });
+                lastContent = content;
+                
+                // 更新最后更新时间
+                const now = new Date();
+                document.getElementById('lastUpdate').textContent = 
+                    `最后更新: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            }
+        }
+        
+        // 更新预览
+        function updatePreview() {
+            const content = editor.getValue();
+            document.getElementById('markdownPreview').innerHTML = marked.parse(content);
+        }
+        
+        // 清空编辑器
+        function clearEditor() {
+            if (confirm('确定要清空编辑器内容吗？这不会影响其他成员的编辑器。')) {
+                editor.setValue('');
+                updatePreview();
+            }
+        }
+        
+        // 切换全屏
+        function toggleFullscreen() {
+            const editorPanel = document.querySelector('.editor-panel');
+            if (!document.fullscreenElement) {
+                editorPanel.requestFullscreen().catch(err => {
+                    console.error(`全屏请求失败: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // 刷新预览
+        function refreshPreview() {
+            updatePreview();
+            showNotification('预览已刷新', 'success');
+        }
+        
+        // 导出Markdown
+        function exportMarkdown() {
+            const content = editor.getValue();
+            const blob = new Blob([content], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `{{ class_name }}-{{ group_name }}-{{ student_name }}-${new Date().toISOString().slice(0, 10)}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showNotification('文档已导出', 'success');
+        }
+        
+        // 显示通知
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+                ${message}
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+        
+        // 刷新在线列表
+        function refreshOnlineList() {
+            socket.emit('get_online_users', {
+                class_name: '{{ class_name }}',
+                group_name: '{{ group_name }}'
+            });
+        }
+        
+        // 初始化Socket.IO连接
+        function initSocket() {
+            socket = io();
+            
+            // 连接成功
+            socket.on('connect', function() {
+                console.log('Socket.IO连接成功');
+                
+                // 加入小组房间
+                socket.emit('join', {
+                    student_name: '{{ student_name }}',
+                    class_name: '{{ class_name }}',
+                    group_name: '{{ group_name }}'
+                });
+            });
+            
+            // 接收文档内容
+            socket.on('document_content', function(data) {
+                if (data.content && data.content !== editor.getValue()) {
+                    isSyncing = true;
+                    editor.setValue(data.content);
+                    lastContent = data.content;
+                    updatePreview();
+                    isSyncing = false;
+                    
+                    showNotification('已加载小组文档内容', 'info');
+                }
+            });
+            
+            // 接收文档更新
+            socket.on('document_updated', function(data) {
+                if (data.content !== editor.getValue()) {
+                    isSyncing = true;
+                    editor.setValue(data.content);
+                    lastContent = data.content;
+                    updatePreview();
+                    isSyncing = false;
+                    
+                    // 添加活动记录
+                    addActivity(`${data.student_name} 更新了文档`, data.timestamp);
+                    
+                    // 更新同步状态
+                    document.getElementById('syncStatus').innerHTML = 
+                        '<i class="fas fa-check-circle"></i> 已同步';
+                    document.getElementById('syncStatus').className = 'sync-status synced';
+                }
+            });
+            
+            // 用户加入
+            socket.on('user_joined', function(data) {
+                addMember(data.student_name);
+                addActivity(`${data.student_name} 加入了协作`, data.timestamp);
+                updateOnlineCount();
+                showNotification(`${data.student_name} 加入了协作`, 'info');
+            });
+            
+            // 用户离开
+            socket.on('user_left', function(data) {
+                removeMember(data.student_name);
+                addActivity(`${data.student_name} 离开了协作`, data.timestamp);
+                updateOnlineCount();
+                showNotification(`${data.student_name} 离开了协作`, 'warning');
+            });
+            
+            // 在线用户更新
+            socket.on('online_users_update', function(data) {
+                document.getElementById('onlineCount').textContent = data.count;
+            });
+            
+            // 文档重置
+            socket.on('document_reset', function(data) {
+                if (confirm('教师已重置文档内容，是否清空编辑器？')) {
+                    isSyncing = true;
+                    editor.setValue('');
+                    lastContent = '';
+                    updatePreview();
+                    isSyncing = false;
+                    
+                    addActivity('教师重置了文档内容', new Date().toLocaleTimeString());
+                    showNotification('文档内容已被教师重置', 'warning');
+                }
+            });
+            
+            // 班级切换通知
+            socket.on('class_changed', function(data) {
+                showNotification(`教师已切换班级为: ${data.class_name}，请重新登录`, 'error');
+                setTimeout(() => {
+                    if (confirm('班级已切换，需要重新登录。是否现在跳转到登录页面？')) {
+                        window.location.href = '/student/logout';
+                    }
+                }, 2000);
+            });
+            
+            // 连接断开
+            socket.on('disconnect', function() {
+                showNotification('连接断开，正在尝试重连...', 'error');
+            });
+        }
+        
+        // 添加成员到列表
+        function addMember(studentName) {
+            if (studentName === '{{ student_name }}') return;
+            
+            const membersList = document.getElementById('membersList');
+            const existingMember = Array.from(membersList.querySelectorAll('.member-info strong'))
+                .find(el => el.textContent === studentName);
+            
+            if (!existingMember) {
+                const memberItem = document.createElement('div');
+                memberItem.className = 'member-item';
+                memberItem.innerHTML = `
+                    <div class="member-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="member-info">
+                        <strong>${studentName}</strong>
+                        <span class="member-status online">在线</span>
+                    </div>
+                `;
+                membersList.appendChild(memberItem);
+                updateOnlineCount();
+            }
+        }
+        
+        // 从列表中移除成员
+        function removeMember(studentName) {
+            const membersList = document.getElementById('membersList');
+            const memberItems = membersList.querySelectorAll('.member-item');
+            
+            memberItems.forEach(item => {
+                const nameElement = item.querySelector('.member-info strong');
+                if (nameElement && nameElement.textContent === studentName) {
+                    item.remove();
+                    updateOnlineCount();
+                }
+            });
+        }
+        
+        // 更新在线人数
+        function updateOnlineCount() {
+            const membersList = document.getElementById('membersList');
+            const memberCount = membersList.querySelectorAll('.member-item').length;
+            document.getElementById('onlineCount').textContent = memberCount;
+        }
+        
+        // 添加活动记录
+        function addActivity(message, timestamp) {
+            const activityList = document.getElementById('activityList');
+            const activityItem = document.createElement('div');
+            activityItem.className = 'activity-item';
+            
+            let icon = 'fa-info-circle';
+            if (message.includes('加入')) icon = 'fa-user-plus';
+            else if (message.includes('离开')) icon = 'fa-user-minus';
+            else if (message.includes('更新')) icon = 'fa-edit';
+            else if (message.includes('重置')) icon = 'fa-eraser';
+            
+            activityItem.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${message}</span>
+                <small class="text-muted">${timestamp}</small>
+            `;
+            
+            // 添加到顶部
+            activityList.insertBefore(activityItem, activityList.firstChild);
+            
+            // 限制最多显示10条记录
+            const maxItems = 10;
+            const items = activityList.querySelectorAll('.activity-item');
+            if (items.length > maxItems) {
+                for (let i = maxItems; i < items.length; i++) {
+                    items[i].remove();
+                }
+            }
+        }
+        
+        // 包装选中的文本
+        function wrapSelection(cm, before, after) {
+            const selection = cm.getSelection();
+            if (selection) {
+                cm.replaceSelection(before + selection + after);
+            } else {
+                const cursor = cm.getCursor();
+                cm.replaceSelection(before + after);
+                cm.setCursor(cursor.line, cursor.ch + before.length);
+            }
+        }
+        
+        // 保存内容（占位函数）
+        function saveContent() {
+            showNotification('内容已自动保存', 'success');
+        }
+        
+        // 显示组长权限提示
+        function showLeaderOnlyMessage() {
+            alert('只有组长可以使用AI功能。如果您是组长，请确认您已正确登录。');
+        }
+        
+        // 初始化垂直分隔条
+        function initVerticalResizer() {
+            const resizer = document.getElementById('verticalResizer');
+            const editorPanel = document.querySelector('.editor-panel');
+            const previewPanel = document.querySelector('.preview-panel');
+            
+            let isResizing = false;
+            let startX = 0;
+            let startEditorWidth = 0;
+            let startPreviewWidth = 0;
+            
+            // 鼠标按下事件
+            resizer.addEventListener('mousedown', function(e) {
+                isResizing = true;
+                startX = e.clientX;
+                
+                // 获取当前宽度
+                const editorStyle = window.getComputedStyle(editorPanel);
+                const previewStyle = window.getComputedStyle(previewPanel);
+                
+                startEditorWidth = parseInt(editorStyle.flexGrow);
+                startPreviewWidth = parseInt(previewStyle.flexGrow);
+                
+                // 添加拖动样式
+                resizer.classList.add('dragging');
+                
+                // 防止文本选择
+                e.preventDefault();
+            });
+            
+            // 鼠标移动事件
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizing) return;
+                
+                const deltaX = e.clientX - startX;
+                const totalWidth = startEditorWidth + startPreviewWidth;
+                
+                // 计算新的flex比例
+                const newEditorWidth = startEditorWidth + (deltaX / 100);
+                const newPreviewWidth = startPreviewWidth - (deltaX / 100);
+                
+                // 限制最小宽度
+                const minWidth = 1;
+                const maxWidth = 5;
+                
+                if (newEditorWidth >= minWidth && newEditorWidth <= maxWidth && 
+                    newPreviewWidth >= minWidth && newPreviewWidth <= maxWidth) {
+                    
+                    editorPanel.style.flex = newEditorWidth;
+                    previewPanel.style.flex = newPreviewWidth;
+                    
+                    // 更新CodeMirror编辑器大小
+                    if (editor && editor.refresh) {
+                        setTimeout(() => editor.refresh(), 10);
+                    }
+                }
+            });
+            
+            // 鼠标释放事件
+            document.addEventListener('mouseup', function() {
+                if (isResizing) {
+                    isResizing = false;
+                    resizer.classList.remove('dragging');
+                    
+                    // 保存宽度到localStorage
+                    const editorStyle = window.getComputedStyle(editorPanel);
+                    const previewStyle = window.getComputedStyle(previewPanel);
+                    
+                    const editorFlex = parseFloat(editorStyle.flex);
+                    const previewFlex = parseFloat(previewStyle.flex);
+                    
+                    localStorage.setItem('editorFlex', editorFlex);
+                    localStorage.setItem('previewFlex', previewFlex);
+                }
+            });
+            
+            // 加载保存的宽度
+            const savedEditorFlex = localStorage.getItem('editorFlex');
+            const savedPreviewFlex = localStorage.getItem('previewFlex');
+            
+            if (savedEditorFlex && savedPreviewFlex) {
+                editorPanel.style.flex = savedEditorFlex;
+                previewPanel.style.flex = savedPreviewFlex;
+            }
+        }
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initEditor();
+            initSocket();
+            updatePreview();
+            initVerticalResizer();
+            
+            // 页面离开时发送离开事件
+            window.addEventListener('beforeunload', function() {
+                if (socket && socket.connected) {
+                    socket.emit('leave', {
+                        student_name: '{{ student_name }}',
+                        class_name: '{{ class_name }}',
+                        group_name: '{{ group_name }}'
+                    });
+                }
+            });
+            
+            // 定期检查连接状态
+            setInterval(function() {
+                if (socket && !socket.connected) {
+                    document.getElementById('syncStatus').innerHTML = 
+                        '<i class="fas fa-exclamation-circle"></i> 连接断开';
+                    document.getElementById('syncStatus').className = 'sync-status error';
+                }
+            }, 5000);
+        });
+    </script>
+
+    <!-- AI助手模态框 -->
+    <div id="aiAssistantModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-robot"></i> AI助手</h3>
+                <button class="modal-close" onclick="closeAIAssistant()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="ai-prompt-section">
+                    <div class="prompt-section">
+                        <label for="aiPromptInput">您的需求描述：</label>
+                        <textarea id="aiPromptInput" rows="4" 
+                                  placeholder="例如：请帮我生成关于Python基础语法的学习笔记，包括变量、数据类型、条件语句和循环"></textarea>
+                        
+                        <div class="prompt-presets">
+                            <h4>预设提示词：</h4>
+                            <div class="preset-buttons">
+                                <button type="button" class="btn btn-sm btn-outline" onclick="setAIPrompt('请帮我生成关于Python基础语法的学习笔记，包括变量、数据类型、条件语句和循环')">
+                                    编程学习
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" onclick="setAIPrompt('请帮我设计5个关于勾股定理的小组讨论问题')">
+                                    数学讨论
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" onclick="setAIPrompt('请帮我设计一个关于环境保护的小组研究项目框架')">
+                                    项目框架
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" onclick="setAIPrompt('请帮我生成英语对话练习材料，包含常用表达和情景对话')">
+                                    英语对话
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" onclick="setAIPrompt('请帮我总结今天小组讨论的主要内容')">
+                                    总结讨论
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ai-generating-section" id="aiGeneratingSection" style="display: none;">
+                    <div class="generating-indicator">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>AI正在生成内容，请稍候...</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <div class="ai-result-section" id="aiResultSection" style="display: none;">
+                    <h4>生成结果：</h4>
+                    <div class="ai-result-content" id="aiResultContent"></div>
+                    <div class="ai-result-actions">
+                        <button class="btn btn-success" onclick="insertAIContent()">
+                            <i class="fas fa-plus"></i> 插入到文档
+                        </button>
+                        <button class="btn btn-secondary" onclick="regenerateAIContent()">
+                            <i class="fas fa-redo"></i> 重新生成
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="generateAIContent()" id="generateAIBtn">
+                    <i class="fas fa-magic"></i> 生成内容
+                </button>
+                <button class="btn btn-secondary" onclick="closeAIAssistant()">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* AI助手模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: #fff;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 700px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+        }
+
+        .modal-close:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .modal-body {
+            padding: 20px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .modal-footer {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 0 0 8px 8px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .ai-prompt-section textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+
+        .prompt-presets {
+            margin-bottom: 20px;
+        }
+
+        .preset-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .ai-generating-section {
+            text-align: center;
+            padding: 30px 0;
+        }
+
+        .generating-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #e9ecef;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            animation: progressAnimation 2s ease-in-out infinite;
+            width: 30%;
+        }
+
+        @keyframes progressAnimation {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
+
+        .ai-result-section {
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+
+        .ai-result-content {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .ai-result-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* AI按钮样式 */
+        .btn-ai {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+
+        .btn-ai:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            color: white;
+        }
+    </style>
+
+    <script>
+        // AI助手相关函数
+        let currentAIContent = '';
+        
+        // 打开AI助手
+        function openAIAssistant() {
+            document.getElementById('aiAssistantModal').style.display = 'block';
+            document.getElementById('aiGeneratingSection').style.display = 'none';
+            document.getElementById('aiResultSection').style.display = 'none';
+            document.getElementById('aiPromptInput').value = '';
+            document.getElementById('generateAIBtn').disabled = false;
+        }
+        
+        // 关闭AI助手
+        function closeAIAssistant() {
+            document.getElementById('aiAssistantModal').style.display = 'none';
+        }
+        
+        // 设置AI提示词
+        function setAIPrompt(prompt) {
+            document.getElementById('aiPromptInput').value = prompt;
+        }
+        
+        // 生成AI内容
+        function generateAIContent() {
+            const prompt = document.getElementById('aiPromptInput').value.trim();
+            
+            if (!prompt) {
+                alert('请输入您的需求描述');
+                return;
+            }
+            
+            // 显示生成中状态
+            document.getElementById('aiGeneratingSection').style.display = 'block';
+            document.getElementById('aiResultSection').style.display = 'none';
+            document.getElementById('generateAIBtn').disabled = true;
+            
+            // 发送请求到服务器
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            
+            fetch('/student/generate_ai_content', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 隐藏生成中状态
+                document.getElementById('aiGeneratingSection').style.display = 'none';
+                
+                if (data.success) {
+                    // 显示生成结果
+                    currentAIContent = data.content;
+                    document.getElementById('aiResultContent').textContent = data.content;
+                    document.getElementById('aiResultSection').style.display = 'block';
+                } else {
+                    alert('生成失败: ' + data.message);
+                    document.getElementById('generateAIBtn').disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('aiGeneratingSection').style.display = 'none';
+                document.getElementById('generateAIBtn').disabled = false;
+                alert('网络错误，请重试');
+            });
+        }
+        
+        // 插入AI内容到文档
+        function insertAIContent() {
+            if (!currentAIContent) {
+                alert('没有可插入的内容');
+                return;
+            }
+            
+            // 获取当前光标位置
+            const cursor = editor.getCursor();
+            const currentContent = editor.getValue();
+            
+            // 在光标位置插入AI内容
+            let newContent;
+            if (currentContent.trim() === '') {
+                newContent = currentAIContent;
+            } else {
+                // 在文档末尾添加AI内容
+                newContent = currentContent + '\n\n---\n\n## AI生成内容\n\n' + currentAIContent;
+            }
+            
+            // 更新编辑器内容
+            isSyncing = true;
+            editor.setValue(newContent);
+            lastContent = newContent;
+            updatePreview();
+            isSyncing = false;
+            
+            // 发送内容更新
+            sendContentUpdate();
+            
+            // 关闭模态框
+            closeAIAssistant();
+            
+            // 显示成功通知
+            showNotification('AI内容已插入到文档', 'success');
+        }
+        
+        // 重新生成AI内容
+        function regenerateAIContent() {
+            const prompt = document.getElementById('aiPromptInput').value.trim();
+            if (prompt) {
+                generateAIContent();
+            }
+        }
+        
+        // 监听AI内容生成事件
+        function initAISocketEvents() {
+            if (!socket) return;
+            
+            socket.on('ai_content_generated', function(data) {
+                // 如果当前用户不是生成者，更新文档
+                if (data.student_name !== '{{ student_name }}') {
+                    if (data.content !== editor.getValue()) {
+                        isSyncing = true;
+                        editor.setValue(data.content);
+                        lastContent = data.content;
+                        updatePreview();
+                        isSyncing = false;
+                        
+                        // 添加活动记录
+                        addActivity(`${data.student_name} 使用AI生成了内容`, new Date().toLocaleTimeString());
+                        
+                        // 显示通知
+                        showNotification(`${data.student_name} 使用AI生成了新内容`, 'info');
+                    }
+                }
+            });
+        }
+        
+        // 修改页面加载初始化函数，添加AI事件监听
+        document.addEventListener('DOMContentLoaded', function() {
+            initEditor();
+            initSocket();
+            updatePreview();
+            initAISocketEvents(); // 添加AI事件监听
+            
+            // 页面离开时发送离开事件
+            window.addEventListener('beforeunload', function() {
+                if (socket && socket.connected) {
+                    socket.emit('leave', {
+                        student_name: '{{ student_name }}',
+                        class_name: '{{ class_name }}',
+                        group_name: '{{ group_name }}'
+                    });
+                }
+            });
+            
+            // 定期检查连接状态
+            setInterval(function() {
+                if (socket && !socket.connected) {
+                    document.getElementById('syncStatus').innerHTML = 
+                        '<i class="fas fa-exclamation-circle"></i> 连接断开';
+                    document.getElementById('syncStatus').className = 'sync-status error';
+                }
+            }, 5000);
+            
+            // 点击模态框外部关闭
+            window.addEventListener('click', function(event) {
+                const modal = document.getElementById('aiAssistantModal');
+                if (event.target === modal) {
+                    closeAIAssistant();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

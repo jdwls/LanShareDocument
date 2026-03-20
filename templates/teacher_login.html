@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师登录 - 局域网协作文档系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <h1><i class="fas fa-chalkboard-teacher"></i> 教师登录</h1>
+                <p>局域网实时协作Markdown文档系统</p>
+            </div>
+            
+            <div class="login-body">
+                {% if error %}
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> {{ error }}
+                </div>
+                {% endif %}
+                
+                <form method="POST" action="{{ url_for('teacher_login') }}">
+                    <div class="form-group">
+                        <label for="password">
+                            <i class="fas fa-lock"></i> 教师密码
+                        </label>
+                        <input type="password" id="password" name="password" 
+                               placeholder="请输入教师密码" required>
+                        <small class="form-text"></small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </button>
+                </form>
+                
+                <div class="login-footer">
+                    <p>学生登录请访问: <a href="{{ url_for('student_login') }}">学生登录页面</a></p>
+                    <p class="text-muted">系统版本: 1.0.0 | 基于Flask + Socket.IO</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="system-info">
+            <h3><i class="fas fa-info-circle"></i> 系统说明</h3>
+            <ul>
+                <li><i class="fas fa-check-circle"></i> 教师上传Excel文件进行学生分组</li>
+                <li><i class="fas fa-check-circle"></i> 学生通过姓名登录进入对应小组</li>
+                <li><i class="fas fa-check-circle"></i> 同组成员实时协作编辑Markdown文档</li>
+                <li><i class="fas fa-check-circle"></i> 支持班级切换和小组管理</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

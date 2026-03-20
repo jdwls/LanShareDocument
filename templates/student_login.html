@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生登录 - 局域网协作文档系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <h1><i class="fas fa-user-graduate"></i> 学生登录</h1>
+                <p>局域网实时协作Markdown文档系统</p>
+            </div>
+            
+            <div class="login-body">
+                {% if error %}
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> {{ error }}
+                </div>
+                {% endif %}
+                
+                <div class="class-info">
+                    <h4><i class="fas fa-school"></i> 当前上课班级</h4>
+                    {% if active_class %}
+                    <div class="active-class-badge">
+                        <i class="fas fa-check-circle"></i> {{ active_class }}
+                    </div>
+                    <p class="text-muted">请输入您的姓名登录到该班级</p>
+                    {% else %}
+                    <div class="inactive-class-badge">
+                        <i class="fas fa-exclamation-triangle"></i> 未设置激活班级
+                    </div>
+                    <p class="text-muted">请联系教师设置当前上课班级</p>
+                    {% endif %}
+                </div>
+                
+                <form method="POST" action="{{ url_for('student_login') }}" {% if not active_class %}onsubmit="alert('当前没有激活的班级，请联系教师'); return false;"{% endif %}>
+                    <div class="form-group">
+                        <label for="student_name">
+                            <i class="fas fa-user"></i> 学生姓名
+                        </label>
+                        <input type="text" id="student_name" name="student_name" 
+                               placeholder="请输入您的姓名" required
+                               {% if not active_class %}disabled{% endif %}>
+                        <small class="form-text">请输入您的真实姓名，系统将自动分配您到对应小组</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-block" {% if not active_class %}disabled{% endif %}>
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </button>
+                </form>
+                
+                <div class="login-footer">
+                    <p>教师登录请访问: <a href="{{ url_for('teacher_login') }}">教师登录页面</a></p>
+                    <p class="text-muted">系统版本: 1.0.0 | 基于Flask + Socket.IO</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="system-info">
+            <h3><i class="fas fa-info-circle"></i> 使用说明</h3>
+            <ul>
+                <li><i class="fas fa-check-circle"></i> 输入姓名即可登录，无需密码</li>
+                <li><i class="fas fa-check-circle"></i> 系统根据教师分组自动分配小组</li>
+                <li><i class="fas fa-check-circle"></i> 同小组成员可实时协作编辑文档</li>
+                <li><i class="fas fa-check-circle"></i> 支持Markdown语法，实时预览</li>
+                <li><i class="fas fa-check-circle"></i> 显示在线成员，实时同步编辑</li>
+            </ul>
+            
+            <div class="login-tips">
+                <h4><i class="fas fa-lightbulb"></i> 温馨提示</h4>
+                <p>1. 请确保您输入的姓名与教师Excel文件中的姓名一致</p>
+                <p>2. 登录后请勿关闭页面，否则将退出协作</p>
+                <p>3. 编辑内容会自动同步给同组其他成员</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

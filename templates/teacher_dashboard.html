@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师控制台 - 局域网协作文档系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 顶部导航栏 -->
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <h1><i class="fas fa-chalkboard-teacher"></i> 教师控制台</h1>
+            </div>
+            <div class="navbar-menu">
+                <a href="{{ url_for('teacher_dashboard') }}" class="nav-link active">
+                    <i class="fas fa-home"></i> 控制台
+                </a>
+                <a href="{{ url_for('teacher_logout') }}" class="nav-link">
+                    <i class="fas fa-sign-out-alt"></i> 退出登录
+                </a>
+            </div>
+        </nav>
+
+        <div class="dashboard-content">
+            <!-- 左侧功能面板 -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-cogs"></i> 系统功能</h3>
+                    <button class="sidebar-btn active" onclick="showSection('upload-section')">
+                        <i class="fas fa-file-upload"></i> 上传分组
+                    </button>
+                    <button class="sidebar-btn" onclick="showSection('class-section')">
+                        <i class="fas fa-users"></i> 班级管理
+                    </button>
+                    <button class="sidebar-btn" onclick="showSection('groups-section')">
+                        <i class="fas fa-layer-group"></i> 小组查看
+                    </button>
+                    <a href="{{ url_for('deepseek_config') }}" class="sidebar-btn">
+                        <i class="fas fa-robot"></i> AI配置
+                    </a>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-info-circle"></i> 系统状态</h3>
+                    <div class="status-item">
+                        <span>当前激活班级:</span>
+                        <span id="active-class-status" class="status-badge">
+                            {% if active_class %}{{ active_class }}{% else %}未设置{% endif %}
+                        </span>
+                    </div>
+                    <div class="status-item">
+                        <span>班级数量:</span>
+                        <span class="status-badge">{{ groups_data|length }}</span>
+                    </div>
+                    <div class="status-item">
+                        <span>学生总数:</span>
+                        <span class="status-badge" id="total-students">计算中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主内容区域 -->
+            <div class="main-content">
+                <!-- 上传Excel文件区域 -->
+                <div id="upload-section" class="content-section active">
+                    <div class="section-header">
+                        <h2><i class="fas fa-file-excel"></i> 上传学生分组Excel文件</h2>
+                        <p>上传包含学生分组信息的Excel文件，系统将自动解析并创建分组</p>
+                    </div>
+
+                    <div class="upload-box">
+                        <div class="upload-instructions">
+                            <h4><i class="fas fa-info-circle"></i> 文件要求:</h4>
+                            <ul>
+                                <li>文件格式: .xlsx 或 .xls</li>
+                                <li>文件大小: 不超过16MB</li>
+                                <li>必须包含四列: <code>班级</code>, <code>组别</code>, <code>姓名</code>, <code>组长</code></li>
+                                <li>列名必须完全一致（区分大小写）</li>
+                                <li>"组长"列填写"是"或"否"，每个组只能有一个组长</li>
+                            </ul>
+                            
+                            <div class="example-table">
+                                <h5>示例格式:</h5>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>班级</th>
+                                            <th>组别</th>
+                                            <th>姓名</th>
+                                            <th>组长</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>计算机1班</td><td>第1组</td><td>张三</td><td>是</td></tr>
+                                        <tr><td>计算机1班</td><td>第1组</td><td>李四</td><td>否</td></tr>
+                                        <tr><td>计算机1班</td><td>第2组</td><td>王五</td><td>是</td></tr>
+                                        <tr><td>计算机1班</td><td>第2组</td><td>赵六</td><td>否</td></tr>
+                                    </tbody>
+                                </table>
+                                <p class="example-note"><small>注意："组长"列填写"是"或"否"，每个组只能有一个组长</small></p>
+                            </div>
+                        </div>
+
+                        <div class="upload-form">
+                            <form id="uploadForm" enctype="multipart/form-data">
+                                <div class="form-group">
+                                    <label for="excelFile">
+                                        <i class="fas fa-file-excel"></i> 选择Excel文件
+                                    </label>
+                                    <input type="file" id="excelFile" name="excel_file" 
+                                           accept=".xlsx,.xls" required>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary" id="uploadBtn">
+                                    <i class="fas fa-upload"></i> 上传并解析
+                                </button>
+                            </form>
+                            
+                            <div id="uploadResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 班级管理区域 -->
+                <div id="class-section" class="content-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-users"></i> 班级管理</h2>
+                        <p>选择当前上课的班级，学生只能登录被激活的班级</p>
+                    </div>
+
+                    <div class="class-management">
+                        {% if groups_data %}
+                        <div class="class-list">
+                            <h4>已上传的班级列表:</h4>
+                            <div class="class-grid">
+                                {% for class_name, groups in groups_data.items() %}
+                                <div class="class-card {% if active_class == class_name %}active{% endif %}">
+                                    <div class="class-card-header">
+                                        <i class="fas fa-school"></i>
+                                        <h5>{{ class_name }}</h5>
+                                        <div class="class-card-actions">
+                                            <button class="btn-icon btn-activate" 
+                                                    onclick="setActiveClass('{{ class_name }}')"
+                                                    title="激活此班级">
+                                                <i class="fas fa-check-circle"></i>
+                                            </button>
+                                            <button class="btn-icon btn-delete" 
+                                                    onclick="deleteClass('{{ class_name }}')"
+                                                    title="删除此班级">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="class-card-body">
+                                        <p><i class="fas fa-layer-group"></i> {{ groups|length }} 个小组</p>
+                                        <p><i class="fas fa-user-graduate"></i> 
+                                            {% set total = namespace(value=0) %}
+                                            {% for group_students in groups.values() %}
+                                                {% set total.value = total.value + group_students|length %}
+                                            {% endfor %}
+                                            {{ total.value }} 名学生
+                                        </p>
+                                    </div>
+                                    {% if active_class == class_name %}
+                                    <div class="class-card-active">
+                                        <i class="fas fa-check-circle"></i> 已激活
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <i class="fas fa-users-slash fa-3x"></i>
+                            <h4>暂无班级数据</h4>
+                            <p>请先上传Excel文件创建学生分组</p>
+                        </div>
+                        {% endif %}
+
+                        <div class="current-class-info">
+                            <h4>当前激活班级:</h4>
+                            <div class="current-class-card">
+                                {% if active_class %}
+                                <div class="current-class-active">
+                                    <i class="fas fa-check-circle"></i>
+                                    <strong>{{ active_class }}</strong>
+                                    <p>学生现在可以登录此班级</p>
+                                </div>
+                                {% else %}
+                                <div class="current-class-inactive">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <strong>未设置激活班级</strong>
+                                    <p>请选择一个班级激活，学生才能登录</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 小组查看区域 -->
+                <div id="groups-section" class="content-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-layer-group"></i> 小组查看</h2>
+                        <p>查看各班级的小组详情和在线状态</p>
+                    </div>
+
+                    <div class="groups-management">
+                        {% if groups_data %}
+                        <div class="class-selector">
+                            <label for="classSelect">选择班级:</label>
+                            <select id="classSelect" onchange="loadGroups(this.value)">
+                                <option value="">请选择班级</option>
+                                {% for class_name in groups_data.keys() %}
+                                <option value="{{ class_name }}">{{ class_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div id="groupsList" class="groups-list">
+                            <div class="empty-state">
+                                <i class="fas fa-layer-group fa-3x"></i>
+                                <h4>请选择班级查看小组</h4>
+                                <p>选择一个班级后，将显示该班级的所有小组信息</p>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <i class="fas fa-layer-group fa-3x"></i>
+                            <h4>暂无分组数据</h4>
+                            <p>请先上传Excel文件创建学生分组</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 显示/隐藏内容区域
+        function showSection(sectionId) {
+            // 隐藏所有区域
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            
+            // 显示目标区域
+            document.getElementById(sectionId).classList.add('active');
+            
+            // 更新侧边栏按钮状态
+            document.querySelectorAll('.sidebar-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        // 计算学生总数
+        function calculateTotalStudents() {
+            // 直接从服务器端获取计算好的总数
+            let total = 0;
+            {% if groups_data %}
+                // 在服务器端计算总数
+                {% set total_students = 0 %}
+                {% for class_name, groups in groups_data.items() %}
+                    {% for group_name, group_info in groups.items() %}
+                        {% if group_info.students %}
+                            {% set total_students = total_students + group_info.students|length %}
+                        {% else %}
+                            {% set total_students = total_students + group_info|length %}
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+                total = {{ total_students }};
+            {% endif %}
+            document.getElementById('total-students').textContent = total;
+        }
+
+        // 设置激活班级
+        function setActiveClass(className) {
+            if (confirm(`确定要激活班级 "${className}" 吗？\n学生将只能登录此班级。`)) {
+                const formData = new FormData();
+                formData.append('class_name', className);
+                
+                fetch('/teacher/set_active_class', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        location.reload();
+                    } else {
+                        alert('设置失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('网络错误，请重试');
+                });
+            }
+        }
+
+        // 加载小组信息
+        function loadGroups(className) {
+            if (!className) return;
+            
+            fetch(`/teacher/get_groups`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.groups_data[className]) {
+                        const groups = data.groups_data[className];
+                        let html = '<div class="groups-grid">';
+                        
+                        for (const [groupName, groupInfo] of Object.entries(groups)) {
+                            const students = groupInfo.students || [];
+                            const leader = groupInfo.leader || '';
+                            
+                            html += `
+                                <div class="group-card">
+                                    <div class="group-card-header">
+                                        <i class="fas fa-users"></i>
+                                        <h5>${groupName}</h5>
+                                        ${leader ? `<span class="leader-badge"><i class="fas fa-crown"></i> 组长: ${leader}</span>` : ''}
+                                    </div>
+                                    <div class="group-card-body">
+                                        <div class="students-list">
+                                            <h6><i class="fas fa-user-graduate"></i> 小组成员 (${students.length}人):</h6>
+                                            <ul>
+                                                ${students.map(student => {
+                                                    // 转义特殊字符，防止JavaScript错误
+                                                    const safeStudent = student.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                                                    const safeClassName = className.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                                                    const safeGroupName = groupName.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                                                    return `
+                                                    <li class="student-item">
+                                                        <span class="student-name">
+                                                            ${student}
+                                                            ${student === leader ? ' <i class="fas fa-crown" style="color: #ffc107;"></i>' : ''}
+                                                        </span>
+                                                        <button class="btn-delete-student" 
+                                                                onclick="deleteStudent('${safeClassName}', '${safeGroupName}', '${safeStudent}')"
+                                                                title="删除学生">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </li>
+                                                    `;
+                                                }).join('')}
+                                            </ul>
+                                        </div>
+                                        <div class="group-actions">
+                                            <button class="btn btn-sm btn-secondary" 
+                                                    onclick="resetDocument('${className}', '${groupName}')">
+                                                <i class="fas fa-eraser"></i> 重置文档
+                                            </button>
+                                            <button class="btn btn-sm btn-info" 
+                                                    onclick="checkOnlineStatus('${className}', '${groupName}')">
+                                                <i class="fas fa-wifi"></i> 查看在线
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        html += '</div>';
+                        document.getElementById('groupsList').innerHTML = html;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('groupsList').innerHTML = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-circle"></i> 加载失败，请重试
+                        </div>
+                    `;
+                });
+        }
+
+        // 重置文档
+        function resetDocument(className, groupName) {
+            if (confirm(`确定要重置 ${className}-${groupName} 的文档内容吗？\n该小组所有成员的编辑器将被清空。`)) {
+                const formData = new FormData();
+                formData.append('class_name', className);
+                formData.append('group_name', groupName);
+                
+                fetch('/teacher/reset_document', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                    } else {
+                        alert('重置失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('网络错误，请重试');
+                });
+            }
+        }
+
+        // 查看在线状态
+        function checkOnlineStatus(className, groupName) {
+            fetch(`/api/get_online_users/${className}/${groupName}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`小组 ${className}-${groupName} 当前有 ${data.online_count} 人在线`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('查询失败');
+                });
+        }
+
+        // 文件上传处理
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('excel_file', file);
+            
+            const uploadBtn = document.getElementById('uploadBtn');
+            const originalText = uploadBtn.innerHTML;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 上传中...';
+            uploadBtn.disabled = true;
+            
+            fetch('/teacher/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('uploadResult').innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> ${data.message}
+                            ${data.classes ? `<p>新增班级: ${data.classes.join(', ')}</p>` : ''}
+                        </div>
+                    `;
+                    // 3秒后刷新页面
+                    setTimeout(() => location.reload(), 3000);
+                } else {
+                    document.getElementById('uploadResult').innerHTML = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-circle"></i> ${data.message}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('uploadResult').innerHTML = `
+                    <div class="alert alert-error">
+                        <i class="fas fa-exclamation-circle"></i> 上传失败，请检查网络连接
+                    </div>
+                `;
+            })
+            .finally(() => {
+                uploadBtn.innerHTML = originalText;
+                uploadBtn.disabled = false;
+            });
+        });
+
+        // 删除班级
+        function deleteClass(className) {
+            if (confirm(`确定要删除班级 "${className}" 吗？\n此操作将删除该班级的所有学生分组和文档数据，且不可恢复！`)) {
+                const formData = new FormData();
+                formData.append('class_name', className);
+                
+                fetch('/teacher/delete_class', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        location.reload();
+                    } else {
+                        alert('删除失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('网络错误，请重试');
+                });
+            }
+        }
+
+        // 删除学生
+        function deleteStudent(className, groupName, studentName) {
+            if (confirm(`确定要删除学生 "${studentName}" 吗？\n此操作将从小组中移除该学生，且不可恢复！`)) {
+                const formData = new FormData();
+                formData.append('class_name', className);
+                formData.append('group_name', groupName);
+                formData.append('student_name', studentName);
+                
+                fetch('/teacher/delete_student', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        // 重新加载小组信息
+                        if (document.getElementById('classSelect').value === className) {
+                            loadGroups(className);
+                        }
+                        // 刷新页面以更新班级列表
+                        location.reload();
+                    } else {
+                        alert('删除失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('网络错误，请重试');
+                });
+            }
+        }
+
+        // 页面加载时计算学生总数
+        document.addEventListener('DOMContentLoaded', function() {
+            calculateTotalStudents();
+        });
+    </script>
+</body>
+</html>
